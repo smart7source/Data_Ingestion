@@ -10,10 +10,11 @@ import json
 import logging
 import traceback
 from pathlib import Path
-
+import re
 from pyspark.sql.dataframe import DataFrame
-from pyspark.sql.functions import col, trim, udf, collect_list, coalesce, lit, when, split
 from pyspark.sql.types import StructType, StringType, StructField, DateType, IntegerType
+import pyspark.sql.functions as f
+from functools import reduce
 
 from utils.db_utils import insert_record, update_record
 from utils.data_quality import DataQuality
@@ -44,9 +45,12 @@ mysql_options = {
 
 
 def validatedata(job_id:string, raw_data_df_flatten: DataFrame, dq_rules_dict):
-    columns=dq_rules_dict['columns']
-    validate_raw_df = raw_data_df_flatten.withColumn('null_check_result', when(raw_data_df_flatten[columns].isNull(), 'TRUE').otherwise('FALSE'))
-    return validate_raw_df
+    column=dq_rules_dict['columns']
+    columns=re.split(',', column)
+
+    raw_data_df_flatten=raw_data_df_flatten.withColumn("null_check_result",
+                                   f.when(reduce(lambda x, y: x | y, (f.col(x).isNull() for x in columns)), True).otherwise(False))
+    return raw_data_df_flatten
 
 
 def load_data_2_rds(raw_data_df:DataFrame):
@@ -76,7 +80,8 @@ def read_dq_json_file(dq_rules_conf_file:string, job_id:string):
     )
     dq_file_df = dq_file.toDF().repartition(1)
     dq_file_df_flatten=flatten_nested_data(dq_file_df)
-    dq_file_df=(dq_file_df_flatten.withColumn('job_id',lit(job_id)))
+    dq_file_df_flatten.show(100)
+    dq_file_df=(dq_file_df_flatten.withColumn('job_id',f.lit(job_id)))
     dq_dict=dq_file_df.rdd.map(lambda row: row.asDict()).collect()
     return dq_dict
 
@@ -105,7 +110,12 @@ def validate_and_process_data(job_id:string, s3_location:string, dq_rules_conf_f
     total_record_count_str=str(total_record_count)
 
     dq_rules=read_dq_json_file(dq_rules_conf_file, job_id)
+    print("These are the DQ Rules.....")
+    print(dq_rules)
     dq_rules_dict=dq_rules[0]
+    print("These are the DQ Rules Dictionary")
+    print(dq_rules_dict)
+
     dq_file_path=dq_rules_dict['dq_file_path']
     dq_location=dq_file_path+job_id+"/"
 
@@ -113,11 +123,11 @@ def validate_and_process_data(job_id:string, s3_location:string, dq_rules_conf_f
     insert_record(INSERT_SQL,(job_id,'PAYMENT',total_record_count_str, '0', '0',val,val,s3_location,dq_location,'STARTED'))
 
     validate_raw_df=validatedata(job_id, raw_data_df_flatten, dq_rules_dict)
-    null_values=validate_raw_df.filter(validate_raw_df['null_check_result'].cast("string") == 'TRUE')
+    null_values=validate_raw_df.filter(validate_raw_df['null_check_result'] == True)
 
     null_values.repartition(1).write.mode('overwrite').csv(dq_location,header = 'true')
 
-    processed_rows = validate_raw_df.filter(validate_raw_df['null_check_result'].cast("string") == 'FALSE')
+    processed_rows = validate_raw_df.filter(validate_raw_df['null_check_result'] == False)
 
     processed_good_rows=processed_rows.drop('null_check_result')
     load_data_2_rds(processed_good_rows)
