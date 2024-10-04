@@ -10,6 +10,8 @@ def lambda_handler(event, context):
     # Get the object from the event and show its content type
     s3_bucket_name = event["Records"][0]["s3"]["bucket"]["name"]
     file_name = event["Records"][0]["s3"]["object"]["key"]
+    print("What is the FILE Name....... ")
+    print(file_name)
     s3_file_name=file_name
     balance_sheet="BalanceSheet"
     invoices="Invoices"
@@ -23,6 +25,8 @@ def lambda_handler(event, context):
     source_data="s3://"+s3_bucket_name+"/"
     dq_config=f"s3://chello/ingestion/dq_config_file/dq-rules.json"
     print(source_data)
+    print("Job Date Time ------------------")
+    print(job_datetime)
     job_name=s3_file_name+"_"+job_datetime
     script_location = f"s3://chello/ingestion/dataIngestion.py"
     default_args = {
@@ -45,7 +49,7 @@ def lambda_handler(event, context):
 
     try:
         response = s3.get_object(Bucket=s3_bucket_name, Key=file_name)
-        print("*****************************************************")
+        print("*******************************************************")
         job_metadata = glue.start_job_run(JobName=glue_job["Name"], Arguments = {'--raw_s3_path' : source_data, '--dq_rule_config_file' : dq_config})
         status = glue.get_job_run(JobName=glue_job["Name"], RunId=job_metadata["JobRunId"])
         print(status["JobRun"]["JobRunState"])

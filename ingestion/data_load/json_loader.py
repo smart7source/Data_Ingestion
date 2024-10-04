@@ -1,18 +1,10 @@
 import string
-from pathlib import Path
 from awsglue.context import GlueContext
 from awsglue.job import Job
 from pyspark.context import SparkContext
 import datetime
-import logging
-import getpass
-import json
-import logging
-import traceback
-from pathlib import Path
 import re
 from pyspark.sql.dataframe import DataFrame
-from pyspark.sql.types import StructType, StringType, StructField, DateType, IntegerType
 import pyspark.sql.functions as f
 from functools import reduce
 
@@ -43,7 +35,6 @@ mysql_options = {
     "password": "Mychello08012024*"
 }
 
-
 def validatedata(job_id:string, raw_data_df_flatten: DataFrame, dq_rules_dict):
     column=dq_rules_dict['columns']
     columns=re.split(',', column)
@@ -53,11 +44,11 @@ def validatedata(job_id:string, raw_data_df_flatten: DataFrame, dq_rules_dict):
     return raw_data_df_flatten
 
 
-def load_data_2_rds(raw_data_df:DataFrame):
+def load_data_2_rds(raw_data_df:DataFrame, table_name:string):
     raw_data_df.write \
         .format("jdbc") \
         .option("url", mysql_options["url"]) \
-        .option("dbtable", mysql_options["balance_sheet"]) \
+        .option("dbtable", mysql_options[table_name]) \
         .option("user", mysql_options["user"]) \
         .option("password", mysql_options["password"]) \
         .mode("append") \
@@ -130,8 +121,6 @@ def validate_and_process_data(job_id:string, s3_location:string, dq_rules_conf_f
     processed_rows = validate_raw_df.filter(validate_raw_df['null_check_result'] == False)
 
     processed_good_rows=processed_rows.drop('null_check_result')
-    load_data_2_rds(processed_good_rows)
-
     processed_rec_count=processed_good_rows.count()
     processed_rec_count_str=str(processed_rec_count)
     null_rec_count_str=str(null_values.count())
